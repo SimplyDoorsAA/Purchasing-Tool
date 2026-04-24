@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SimplyDoors Material Extractor v2.1</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #003366;
+            --secondary-color: #f4f7f6;
+            --text-color: #333;
+            --border-color: #ccc;
+            --accent-color: #00509e;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--secondary-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: var(--primary-color);
+            border-bottom: 2px solid var(--primary-color);
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+
+        .instructions {
+            font-size: 0.95em;
+            color: #555;
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+
+        .upload-section {
+            background-color: #e9f0f5;
+            border: 2px dashed var(--primary-color);
+            padding: 20px;
+            text-align: center;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .upload-btn {
+            background-color: var(--primary-color);
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            display: inline-block;
+        }
+
+        .upload-btn:hover {
+            background-color: var(--accent-color);
+        }
+
+        .file-name-display {
+            margin-top: 10px;
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+
+        textarea {
+            width: 100%;
+            height: 150px;
+            padding: 15px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 14px;
+            resize: vertical;
+            box-sizing: border-box;
+            margin-bottom: 20px;
+        }
+
+        .action-btn {
+            background-color: #28a745;
+            color: #fff;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            width: 100%;
+        }
+
+        .action-btn:hover {
+            background-color: #218838;
+        }
+
+        .table-container {
+            margin-top: 30px;
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+            vertical-align: top;
+        }
+
+        th {
+            background-color: var(--primary-color);
+            color: #fff;
+            font-weight: 600;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+
+        tr:hover {
+            background-color: #f1f1f1;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #777;
+            font-style: italic;
+        }
+        
+        .loading {
+            display: none;
+            color: var(--primary-color);
+            font-weight: bold;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>SimplyDoors Material Extractor v2.1</h1>
+    <p class="instructions">
+        <strong>Option 1:</strong> Upload your quote PDF directly. The app will read the text and extract the materials.<br>
+        <strong>Option 2:</strong> If the PDF upload misses something, you can still copy the text from the document and paste it into the manual override box below.
+    </p>
+
+    <div class="upload-section">
+        <label for="pdfUpload" class="upload-btn">Select Quote PDF</label>
+        <input type="file" id="pdfUpload" accept=".pdf" onchange="handleFileUpload(event)">
+        <div id="fileNameDisplay" class="file-name-display">No file selected</div>
+        <div id="loadingIndicator" class="loading">Reading PDF... Please wait.</div>
+    </div>
+    
+    <details style="margin-bottom: 20px;">
+        <summary style="cursor: pointer; color: #555; font-weight: bold;">Manual Text Override (Click to expand)</summary>
+        <textarea id="quoteInput" placeholder="Raw text will appear here after uploading, or you can paste text directly..."></textarea>
+    </details>
+    
+    <button class="action-btn" onclick="extractMaterials()">Generate Material List</button>
+
+    <div class="table-container">
+        <table id="resultsTable">
+            <thead>
+                <tr>
+                    <th>Line Item</th>
+                    <th>Room / Comment</th>
+                    <th>Product Details</th>
+                    <th>Frame & Trim / Sill</th>
+                    <th>Hardware & Hinge</th>
+                </tr>
+            </thead>
+            <tbody id="resultsBody">
+                <tr>
+                    <td colspan="5" class="empty-state">Upload a PDF or paste text to generate the list.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    // FIX: Explicitly map the PDF.js library from the window object
+    const pdfjsLib = window['pdfjs-dist/build/pdf'];
+
+    // Initialize PDF.js worker
+    if (pdfjsLib) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    } else {
+        alert("PDF.js failed to load. Please check your internet connection or try a different browser.");
+    }
+
+    async function handleFileUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        document.getElementById('fileNameDisplay').textContent = file.name;
+        document.getElementById('loadingIndicator').style.display = 'block';
+        
+        const fileReader = new FileReader();
+        
+        fileReader.onload = async function() {
+            try {
+                const typedarray = new Uint8Array(this.result);
+                const pdf = await pdfjsLib.getDocument(typedarray).promise;
+                let fullText = '';
+
+                // Loop through all pages to extract text
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    
+                    // Join items with a space, and add a newline at the end of the page
+                    const pageText = textContent.items.map(item => item.str).join(' ');
+                    fullText += pageText + '\n\n';
+                }
+
+                // Place extracted text into the textarea
+                document.getElementById('quoteInput').value = fullText;
+                document.getElementById('loadingIndicator').style.display = 'none';
+                
+                // Automatically run the extraction
+                extractMaterials();
+
+            } catch (error) {
+                console.error("Error reading PDF: ", error);
+                alert("There was an error reading the PDF. It might be an image-based scan or corrupted. Try pasting the text manually.");
+                document.getElementById('loadingIndicator').style.display = 'none';
+            }
+        };
+
+        fileReader.readAsArrayBuffer(file);
+    }
+
+    function extractMaterials() {
+        const rawText = document.getElementById('quoteInput').value;
+        const resultsBody = document.getElementById('resultsBody');
+        resultsBody.innerHTML = ''; 
+
+        if (!rawText.trim()) {
+            resultsBody.innerHTML = '<tr><td colspan="5" class="empty-state">No text found. Please upload a PDF or paste text.</td></tr>';
+            return;
+        }
+
+        // Clean up the text
+        let cleanText = rawText.replace(/\/g, '').replace(/"/g, '');
+
+        // Split by "Line Item #"
+        const lineItems = cleanText.split(/Line Item #/i);
+        lineItems.shift(); 
+
+        let extractedData = [];
+
+        lineItems.forEach(chunk => {
+            let itemData = {
+                lineItem: 'N/A',
+                room: 'N/A',
+                productInfo: 'N/A',
+                frameTrim: 'N/A',
+                hardware: 'N/A'
+            };
+
+            // 1. Line Item Match
+            const lineMatch = chunk.match(/(\d+-\d+)/);
+            if (lineMatch) itemData.lineItem = lineMatch[1];
+
+            // 2. Room/Comment Match
+            const roomMatch = chunk.match(/Comment\/Room:\s*([A-Za-z0-9\s]+)/i);
+            if (roomMatch) {
+                itemData.room = roomMatch[1].trim();
+            }
+
+            // 3. Product Information Match
+            const productMatch = chunk.match(/Product Information:([\s\S]*?)(?:Frame & Trim:|Frame & Sill:|Bore, Hinge, & Hardware:|Dimensions:|$)/i);
+            if (productMatch) {
+                itemData.productInfo = cleanExtractedText(productMatch[1]);
+            }
+
+            // 4. Frame & Trim / Frame & Sill Match
+            const frameMatch = chunk.match(/(?:Frame & Trim:|Frame & Sill:)([\s\S]*?)(?:Bore, Hinge, & Hardware:|Prefinish:|Dimensions:|$)/i);
+            if (frameMatch) {
+                itemData.frameTrim = cleanExtractedText(frameMatch[1]);
+            }
+
+            // 5. Hardware & Hinge Match
+            const hardwareMatch = chunk.match(/Bore, Hinge, & Hardware:([\s\S]*?)(?:Prefinish:|Dimensions:|$)/i);
+            if (hardwareMatch) {
+                itemData.hardware = cleanExtractedText(hardwareMatch[1]);
+            }
+
+            // Push to array if we found something useful
+            if (itemData.productInfo !== 'N/A' || itemData.frameTrim !== 'N/A') {
+                extractedData.push(itemData);
+            }
+        });
+
+        if (extractedData.length === 0) {
+            resultsBody.innerHTML = '<tr><td colspan="5" class="empty-state">Could not detect standard quote formats. The PDF text might be jumbled.</td></tr>';
+            return;
+        }
+
+        // Build the table rows
+        extractedData.forEach(data => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td><strong>${data.lineItem}</strong></td>
+                <td>${data.room}</td>
+                <td>${formatMultilineText(data.productInfo)}</td>
+                <td>${formatMultilineText(data.frameTrim)}</td>
+                <td>${formatMultilineText(data.hardware)}</td>
+            `;
+            resultsBody.appendChild(row);
+        });
+    }
+
+    // Helper functions to clean up the data for the UI
+    function cleanExtractedText(text) {
+        return text
+            .replace(/Parts Item Code:.*$/gm, '') // Remove internal parts codes if present
+            .replace(/Swift Quote.*$/gm, '') // Clean up footer text bleed
+            .replace(/\s{2,}/g, ' ') // Collapse multiple spaces
+            .trim();
+    }
+
+    function formatMultilineText(text) {
+        if (!text || text === 'N/A') return text;
+        return text; 
+    }
+</script>
+
+</body>
+</html>
